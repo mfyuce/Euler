@@ -1,5 +1,5 @@
-import torch 
-from torch import nn 
+import torch
+from torch import nn
 from torch.nn import functional as F
 from torch.distributed import rpc
 from torch_geometric.nn import GCNConv, GATConv
@@ -14,9 +14,10 @@ class DropEdge(nn.Module):
     '''
     Implimenting DropEdge https://openreview.net/forum?id=Hkx1qkrKPr
     '''
+
     def __init__(self, p):
         super().__init__()
-        self.p = p 
+        self.p = p
 
     def forward(self, ei, ew=None):
         if self.training and self.p > 0:
@@ -25,10 +26,10 @@ class DropEdge(nn.Module):
                 return ei[:, mask > self.p]
             else:
                 return ei[:, mask > self.p], ew[mask > self.p]
-                
+
         if ew is None:
-            return ei 
-        else: 
+            return ei
+        else:
             return ei, ew
 
 
@@ -63,10 +64,10 @@ class GCN(Euler_Embed_Unit):
         # Note: passing None as the start or end data_kw skips the 
         # actual loading part, and just pulls the x-dim 
         print("%s loading %s-%s" % (
-            rpc.get_worker_info().name, 
-            str(data_kws['start']), 
+            rpc.get_worker_info().name,
+            str(data_kws['start']),
             str(data_kws['end']))
-        )
+              )
 
         self.data = data_load(data_kws.pop("jobs"), **data_kws)
 
@@ -77,8 +78,7 @@ class GCN(Euler_Embed_Unit):
         self.drop = nn.Dropout(0.25)
         self.tanh = nn.Tanh()
         self.de = DropEdge(0.8)
-    
-    
+
     def inner_forward(self, mask_enum):
         '''
         Override parent's abstract inner_forward method
@@ -92,14 +92,13 @@ class GCN(Euler_Embed_Unit):
             # Small optimization. Running each loop step as its own thread
             # is a tiny bit faster. 
             zs.append(
-                #torch.jit._fork(self.forward_once, mask_enum, i)
+                # torch.jit._fork(self.forward_once, mask_enum, i)
                 self.forward_once(mask_enum, i)
             )
 
-        #return torch.stack([torch.jit._wait(z) for z in zs])
+        # return torch.stack([torch.jit._wait(z) for z in zs])
         return torch.stack(zs)
 
-    
     def forward_once(self, mask_enum, i):
         '''
         Helper function to make inner_forward a little more readable 
@@ -114,7 +113,7 @@ class GCN(Euler_Embed_Unit):
         if self.data.dynamic_feats:
             x = self.data.xs[i]
         else:
-            x = self.data.xs 
+            x = self.data.xs
 
         ei = self.data.ei_masked(mask_enum, i)
         ew = self.data.ew_masked(mask_enum, i)
@@ -149,6 +148,7 @@ def detector_gcn_rref(loader, kwargs, h_dim, z_dim, **kws):
     return DetectorEncoder(
         GCN(loader, kwargs, h_dim, z_dim)
     )
+
 
 def predictor_gcn_rref(loader, kwargs, h_dim, z_dim, head=False):
     '''
@@ -186,7 +186,7 @@ class GAT(GCN):
         if self.data.dynamic_feats:
             x = self.data.xs[i]
         else:
-            x = self.data.xs 
+            x = self.data.xs
 
         ei = self.data.ei_masked(mask_enum, i)
         ei = self.de(ei)
@@ -206,6 +206,7 @@ def detector_gat_rref(loader, kwargs, h_dim, z_dim, **kws):
         GAT(loader, kwargs, h_dim, z_dim)
     )
 
+
 def predictor_gat_rref(loader, kwargs, h_dim, z_dim, head=False):
     return PredictorEncoder(
         GAT(loader, kwargs, h_dim, z_dim), head
@@ -216,11 +217,12 @@ class PoolSAGEConv(MessagePassing):
     '''
     The official PyTorch Geometric package does not actually follow the paper
     This is problematic from both a performance standpoint, and an accuracy one. 
-    I have taken it upon myself to build a more correct Maxpool GraphSAGE implientation
+    I have taken it upon myself to build a more correct Maxpool GraphSAGE implementation
     '''
+
     def __init__(self, in_channels, out_channels):
         super().__init__(aggr='max')
-        
+
         self.aggr_n = nn.Sequential(
             nn.Linear(in_channels, out_channels),
             nn.ReLU()
@@ -234,7 +236,7 @@ class PoolSAGEConv(MessagePassing):
         x_e = self.e_lin(x_e)
 
         x_r = self.r_lin(x)
-        
+
         x = x_r + x_e
         x = F.normalize(x, p=2., dim=-1)
         return x
@@ -242,9 +244,10 @@ class PoolSAGEConv(MessagePassing):
 
 class SAGE(GAT):
     '''
-    2-layer GraphSAGE implimenting the Euler Embed Unit interface. Inherits GAT
+    2-layer GraphSAGE implementing the Euler Embed Unit interface. Inherits GAT
     as the only difference is which submodules are used
     '''
+
     def __init__(self, data_load, data_kws, h_dim, z_dim):
         super().__init__(data_load, data_kws, h_dim, z_dim)
 
@@ -256,6 +259,7 @@ def detector_sage_rref(loader, kwargs, h_dim, z_dim, **kws):
     return DetectorEncoder(
         SAGE(loader, kwargs, h_dim, z_dim)
     )
+
 
 def predictor_sage_rref(loader, kwargs, h_dim, z_dim, head=False):
     return PredictorEncoder(

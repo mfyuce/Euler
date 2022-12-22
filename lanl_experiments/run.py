@@ -1,5 +1,5 @@
 from argparse import ArgumentParser
-import os 
+import os
 
 import pandas as pd
 
@@ -7,7 +7,7 @@ import loaders.load_lanl as lanl
 from models.recurrent import GRU, LSTM, EmptyModel
 from models.embedders import \
     detector_gcn_rref, detector_gat_rref, detector_sage_rref, \
-    predictor_gcn_rref, predictor_gat_rref, predictor_sage_rref 
+    predictor_gcn_rref, predictor_gat_rref, predictor_sage_rref
 
 from spinup import run_all
 
@@ -19,7 +19,8 @@ DEFAULT_TR = {
     'val_nratio': 1
 }
 
-OUTPATH = '' # Output folder for results.txt (ending in delimeter)
+OUTPATH = ''  # Output folder for results.txt (ending in delimeter)
+
 
 def get_args():
     global DEFAULT_TR
@@ -75,7 +76,7 @@ def get_args():
 
     ap.add_argument(
         '-t', '--tests',
-        type=int, 
+        type=int,
         default=1
     )
 
@@ -105,7 +106,7 @@ def get_args():
     # For future new data sets
     ap.add_argument(
         '--dataset',
-        default='LANL', 
+        default='LANL',
         type=str.upper
     )
 
@@ -116,29 +117,29 @@ def get_args():
     )
     ap.add_argument(
         '--patience',
-        default=5, 
+        default=5,
         type=int
     )
 
     args = ap.parse_args()
     args.te_end = None
-    assert args.fpweight >= 0 and args.fpweight <=1, '--fpweight must be a value between 0 and 1 (inclusive)'
+    assert args.fpweight >= 0 and args.fpweight <= 1, '--fpweight must be a value between 0 and 1 (inclusive)'
 
     readable = str(args)
     print(readable)
 
-    model_str = '%s -> %s (%s)' % (args.encoder , args.rnn, args.impl)
+    model_str = '%s -> %s (%s)' % (args.encoder, args.rnn, args.impl)
     print(model_str)
-    
+
     # Parse dataset info 
     if args.dataset.startswith('L'):
         args.loader = lanl.load_lanl_dist
         args.tr_start = 0
         args.tr_end = lanl.DATE_OF_EVIL_LANL
-        args.val_times = None # Computed later
+        args.val_times = None  # Computed later
         args.te_times = [(args.tr_end, lanl.TIMES['all'])]
-        args.delta = int(args.delta * (60**2))
-        args.manual = False 
+        args.delta = int(args.delta * (60 ** 2))
+        args.manual = False
 
     else:
         raise NotImplementedError('Only the LANL data set is supported in this release')
@@ -157,14 +158,15 @@ def get_args():
     if args.rnn == 'GRU':
         args.rnn = GRU
     elif args.rnn == 'LSTM':
-        args.rnn = LSTM 
+        args.rnn = LSTM
     else:
         args.rnn = EmptyModel
 
     return args, readable, model_str
 
+
 if __name__ == '__main__':
-    args, argstr, modelstr = get_args() 
+    args, argstr, modelstr = get_args()
     DEFAULT_TR['lr'] = args.lr
     DEFAULT_TR['patience'] = args.patience
 
@@ -178,18 +180,18 @@ if __name__ == '__main__':
 
     stats = [
         run_all(
-            args.workers, 
-            args.rnn, 
+            args.workers,
+            args.rnn,
             rnn_args,
-            args.encoder, 
-            worker_args, 
+            args.encoder,
+            worker_args,
             args.delta,
             args.load,
             args.fpweight,
             args.impl,
-            args.loader, 
+            args.loader,
             args.tr_start,
-            args.tr_end, 
+            args.tr_end,
             args.val_times,
             args.te_times,
             DEFAULT_TR
@@ -199,9 +201,9 @@ if __name__ == '__main__':
 
     # Don't write out if nowrite
     if args.nowrite:
-        exit() 
+        exit()
 
-    f = open(OUTPATH+'results.txt', 'a')
+    f = open(OUTPATH + 'results.txt', 'a')
     f.write(str(argstr) + '\n')
     f.write('LR: ' + str(args.lr) + '\n')
     f.write(modelstr + '\n')
@@ -215,7 +217,7 @@ if __name__ == '__main__':
         compressed = pd.DataFrame(
             [df.mean(), df.sem()],
             index=['mean', 'stderr']
-        ).to_csv().replace(',', '\t') # For easier copying into Excel
+        ).to_csv().replace(',', '\t')  # For easier copying into Excel
 
         full = df.to_csv(index=False, header=False)
         full = full.replace(',', ', ')

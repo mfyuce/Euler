@@ -1,4 +1,5 @@
-from torch import nn 
+from torch import nn
+
 
 class GRU(nn.Module):
     '''
@@ -27,8 +28,8 @@ class GRU(nn.Module):
 
         self.drop = nn.Dropout(0.25)
         self.lin = nn.Linear(h_dim, z_dim)
-        
-        self.z_dim = z_dim 
+
+        self.z_dim = z_dim
 
     def forward(self, xs, h0, include_h=False):
         '''
@@ -42,15 +43,15 @@ class GRU(nn.Module):
             If true, return hidden state as well as output
         '''
         xs = self.drop(xs)
-        
+
         if isinstance(h0, type(None)):
             xs, h = self.rnn(xs)
         else:
             xs, h = self.rnn(xs, h0)
-        
+
         if not include_h:
             return self.lin(xs)
-        
+
         return self.lin(xs), h
 
 
@@ -89,6 +90,7 @@ class Lin(nn.Module):
     Doesn't take time into account at all, just projects input
     into the output dimension via MLP
     '''
+
     def __init__(self, x_dim, h_dim, z_dim, hidden_units=1):
         super(Lin, self).__init__()
 
@@ -103,7 +105,7 @@ class Lin(nn.Module):
     def forward(self, xs, h0, include_h=False):
         if not include_h:
             return self.layers(xs)
-        
+
         return self.layers(xs), None
 
 
@@ -112,6 +114,7 @@ class EmptyModel(nn.Module):
     Just returns the input, assumes dims are correctly
     sized
     '''
+
     def __init__(self, x_dim, h_dim, z_dim, hidden_units=1):
         super(EmptyModel, self).__init__()
         self.id = nn.Identity()
@@ -119,5 +122,5 @@ class EmptyModel(nn.Module):
     def forward(self, xs, h0, include_h=False):
         if not include_h:
             return self.id(xs)
-        
+
         return self.id(xs), None

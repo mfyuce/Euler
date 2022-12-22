@@ -1,11 +1,12 @@
 from copy import deepcopy
 
-import torch 
+import torch
 from torch import nn
-from torch.distributed import rpc 
+from torch.distributed import rpc
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 from .utils import _remote_method, _remote_method_async, _param_rrefs
+
 
 class Euler_Embed_Unit(nn.Module):
     '''
@@ -36,7 +37,7 @@ class Euler_Embed_Unit(nn.Module):
             self.eval()
             with torch.no_grad():
                 return self.inner_forward(mask_enum)
-        
+
         return self.inner_forward(mask_enum)
 
     def decode(self, src, dst, z):
@@ -67,14 +68,12 @@ class Euler_Encoder(DDP):
         '''
         super().__init__(module, **kwargs)
 
-    
     def train(self, mode=True):
         '''
-        This method is inacceessable in the DDP wrapped model by default
+        This method is inaccessible in the DDP wrapped model by default
         '''
         self.module.train(mode=mode)
 
-    
     def load_new_data(self, loader, kwargs):
         '''
         Put different data on worker. Must be called before work can be done
@@ -86,30 +85,27 @@ class Euler_Encoder(DDP):
             to load the TGraph with
         '''
         print(rpc.get_worker_info().name + ": Reloading %d - %d" % (kwargs['start'], kwargs['end']))
-        
+
         jobs = kwargs.pop('jobs')
         self.module.data = loader(jobs, **kwargs)
         return True
-    
+
     def get_data_field(self, field):
         '''
         Return some field from this worker's data object
         '''
         return self.module.data.__getattribute__(field)
 
-
     def get_data(self):
         return self.module.data
 
-    
     def run_arbitrary_fn(self, fn, *args, **kwargs):
         '''
         Run an arbitrary function using this machine
         '''
         return fn(*args, **kwargs)
 
-    
-    def decode(self, e,z):
+    def decode(self, e, z):
         '''
         Given a single edge list and embeddings, return the dot product
         likelihood of each edge. Uses inner product by default
@@ -119,27 +115,25 @@ class Euler_Encoder(DDP):
         z : torch.Tensor
             A dxN list of node embeddings generated to represent nodes at this snapshot
         '''
-        src,dst = e 
+        src, dst = e
         return self.module.decode(
-            src,dst,z
+            src, dst, z
         )
 
-    
     def bce(self, t_scores, f_scores):
-        '''
+        """
         Computes binary cross entropy loss
 
         t_scores : torch.Tensor
             a 1-dimensional tensor of likelihood scores given to edges that exist
         f_scores : torch.Tensor
             a 1-dimensional tensor of likelihood scores given to edges that do not exist
-        '''
+        """
         EPS = 1e-6
-        pos_loss = -torch.log(t_scores+EPS).mean()
-        neg_loss = -torch.log(1-f_scores+EPS).mean()
+        pos_loss = -torch.log(t_scores + EPS).mean()
+        neg_loss = -torch.log(1 - f_scores + EPS).mean()
 
         return (pos_loss + neg_loss) * 0.5
-
 
     def calc_loss(self, z, partition, nratio):
         '''
@@ -158,7 +152,6 @@ class Euler_Encoder(DDP):
         '''
         raise NotImplementedError
 
-    
     def decode_all(self, zs, unsqueeze=False):
         '''
         Given node embeddings, return edge likelihoods for all edges in snapshots held by this model. 
@@ -170,8 +163,7 @@ class Euler_Encoder(DDP):
             snapshot held by this model's TGraph at timestep n
         '''
         raise NotImplementedError
-    
-    
+
     def score_edges(self, z, partition, nratio):
         '''
         Scores all known edges and randomly sampled non-edges. The same as calc_loss but 
@@ -190,12 +182,12 @@ class Euler_Encoder(DDP):
         raise NotImplementedError
 
 
-
 class Euler_Recurrent(nn.Module):
     '''
     Abstract class for master module that holds all workers
     and calculates loss
     '''
+
     def __init__(self, rnn: nn.Module, remote_rrefs: list):
         '''
         Constructor for Recurrent layer of the Euler framework
@@ -225,14 +217,13 @@ class Euler_Recurrent(nn.Module):
         super(Euler_Recurrent, self).__init__()
 
         self.gcns = remote_rrefs
-        self.rnn = rnn 
+        self.rnn = rnn
 
         self.num_workers = len(self.gcns)
         self.len_from_each = []
 
         # Used for LR when classifying anomalies
         self.cutoff = 0.5
-
 
     def forward(self, mask_enum, include_h=False, h0=None, no_grad=False):
         '''
@@ -261,8 +252,8 @@ class Euler_Recurrent(nn.Module):
                 h0, include_h=True
             )
             zs.append(z)
-        
-        #zs = [f.wait() for f in futs]
+
+        # zs = [f.wait() for f in futs]
 
         # May as well do this every time, not super expensive
         self.len_from_each = [
@@ -271,14 +262,13 @@ class Euler_Recurrent(nn.Module):
         zs = torch.cat(zs, dim=0)
         self.z_dim = zs.size(-1)
 
-        #zs, h0 = self.rnn(torch.cat(zs, dim=0), h0, include_h=True)
+        # zs, h0 = self.rnn(torch.cat(zs, dim=0), h0, include_h=True)
 
         if include_h:
-            return zs, h0 
+            return zs, h0
         else:
             return zs
 
-    
     def encode(self, mask_enum, no_grad):
         '''
         Tell each remote worker to encode their data. Data lives on workers to minimize net traffic 
@@ -290,18 +280,17 @@ class Euler_Recurrent(nn.Module):
             Used for speedy evaluation
         '''
         embed_futs = []
-        
-        for i in range(self.num_workers):    
+
+        for i in range(self.num_workers):
             embed_futs.append(
                 _remote_method_async(
-                    DDP.forward, 
+                    DDP.forward,
                     self.gcns[i],
                     mask_enum, no_grad
                 )
             )
 
         return embed_futs
-
 
     def parameter_rrefs(self):
         '''
@@ -311,17 +300,16 @@ class Euler_Recurrent(nn.Module):
         the recurrent layer
         '''
         params = []
-        for rref in self.gcns: 
+        for rref in self.gcns:
             params.extend(
                 _remote_method(
                     _param_rrefs, rref
                 )
             )
-        
+
         params.extend(_param_rrefs(self.rnn))
         return params
 
-   
     def save_states(self):
         '''
         Makes a copy of the current state dict as well as 
@@ -333,7 +321,6 @@ class Euler_Recurrent(nn.Module):
 
         return gcn, deepcopy(self.state_dict())
 
-    
     def load_states(self, gcn_state_dict, rnn_state_dict):
         '''
         Given the state dict for one GCN and the RNN load them
@@ -345,30 +332,28 @@ class Euler_Recurrent(nn.Module):
             Parameter dict for local RNN
         '''
         self.load_state_dict(rnn_state_dict)
-        
+
         jobs = []
         for rref in self.gcns:
             jobs.append(
                 _remote_method_async(
-                    DDP.load_state_dict, rref, 
+                    DDP.load_state_dict, rref,
                     gcn_state_dict
                 )
             )
 
         [j.wait() for j in jobs]
 
-    
     def train(self, mode=True):
         '''
         Propogate training mode to all workers
         '''
-        super(Euler_Recurrent, self).train() 
+        super(Euler_Recurrent, self).train()
         [_remote_method(
             Euler_Encoder.train,
             self.gcns[i],
             mode=mode
         ) for i in range(self.num_workers)]
-
 
     def eval(self):
         '''
@@ -381,7 +366,6 @@ class Euler_Recurrent(nn.Module):
             mode=False
         ) for i in range(self.num_workers)]
 
-    
     def score_all(self, zs, unsqueeze=False):
         '''
         Has the distributed models score and label all of their edges
@@ -395,7 +379,6 @@ class Euler_Recurrent(nn.Module):
         '''
         raise NotImplementedError
 
-    
     def loss_fn(self, zs, partition, nratio=1.0):
         '''
         Runs NLL on each worker machine given the generated embeds
@@ -412,7 +395,6 @@ class Euler_Recurrent(nn.Module):
             The workers sample nratio * |E| negative edges for calculating loss
         '''
         raise NotImplementedError
-
 
     def score_edges(self, zs, partition, nratio=1):
         '''

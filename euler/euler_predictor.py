@@ -1,8 +1,9 @@
-import torch 
-from torch.distributed import rpc 
+import torch
+from torch.distributed import rpc
 
 from .euler_interface import Euler_Embed_Unit, Euler_Encoder, Euler_Recurrent
 from .utils import _remote_method, _remote_method_async
+
 
 class PredictorEncoder(Euler_Encoder):
     '''
@@ -31,7 +32,6 @@ class PredictorEncoder(Euler_Encoder):
         if self.is_head:
             print("%s is head" % rpc.get_worker_info().name)
 
-
     def decode_all(self, zs, unsqueeze=False):
         '''
             Given node embeddings, return edge likelihoods for 
@@ -46,11 +46,11 @@ class PredictorEncoder(Euler_Encoder):
             it is safe to assume z[n] are the embeddings for nodes in the 
             snapshot held by this model's TGraph at timestep n
         '''
-        preds,ys,cnts = [], [], []
+        preds, ys, cnts = [], [], []
         for i in range(self.is_head, self.module.data.T):
             preds.append(
                 self.decode(
-                    self.module.data.eis[i], 
+                    self.module.data.eis[i],
                     zs[i]
                 )
             )
@@ -60,7 +60,6 @@ class PredictorEncoder(Euler_Encoder):
 
         return preds, ys, cnts
 
-    
     def score_edges(self, z, partition, nratio):
         '''
         Given a set of Z embeddings, returns likelihood scores for all known
@@ -76,7 +75,7 @@ class PredictorEncoder(Euler_Encoder):
         nratio : float
             The model samples nratio * |E| negative edges for calculating loss
         '''
-        
+
         # Skip neg edges for E_0 if this is the head node
         n = self.module.data.get_negative_edges(
             partition, nratio=nratio, start=self.is_head
@@ -93,13 +92,12 @@ class PredictorEncoder(Euler_Encoder):
                 continue
 
             p_scores.append(self.decode(p, z[i]))
-            n_scores.append(self.decode(n[i-self.is_head], z[i]))
+            n_scores.append(self.decode(n[i - self.is_head], z[i]))
 
         p_scores = torch.cat(p_scores, dim=0)
         n_scores = torch.cat(n_scores, dim=0)
 
         return p_scores, n_scores
-
 
     def calc_loss(self, z, partition, nratio):
         '''
@@ -132,7 +130,7 @@ class PredictorEncoder(Euler_Encoder):
 
             tot_loss += self.bce(
                 self.decode(ps, z[i]),
-                self.decode(ns[i-self.is_head], z[i])
+                self.decode(ns[i - self.is_head], z[i])
             )
 
         return tot_loss.true_divide(len(z))
@@ -165,32 +163,31 @@ class PredictorRecurrent(Euler_Recurrent):
         zs = torch.cat(
             [torch.zeros(zs[0].size()).unsqueeze(0), zs]
         )
-        
+
         futs = []
         start = 0
-    
+
         for i in range(self.num_workers):
             end = start + self.len_from_each[i]
             futs.append(
                 _remote_method_async(
                     PredictorEncoder.decode_all,
                     self.gcns[i],
-                    zs[start : end],
+                    zs[start: end],
                     unsqueeze=unsqueeze
                 )
             )
-            start = end 
+            start = end
 
         obj = [f.wait() for f in futs]
         scores, ys, cnts = zip(*obj)
-        
+
         # Compress into single list of snapshots
         scores = sum(scores, [])
         ys = sum(ys, [])
         cnts = sum(cnts, [])
 
         return scores, ys, cnts
-
 
     def loss_fn(self, zs, partition, nratio=1):
         '''
@@ -208,25 +205,25 @@ class PredictorRecurrent(Euler_Recurrent):
         nratio : float
             The workers sample nratio * |E| negative edges for calculating loss
         '''
-        
+
         zs = torch.cat(
             [torch.zeros(zs[0].size()).unsqueeze(0), zs]
         )
-        
+
         futs = []
         start = 0
-    
+
         for i in range(self.num_workers):
             end = start + self.len_from_each[i]
             futs.append(
                 _remote_method_async(
                     PredictorEncoder.calc_loss,
                     self.gcns[i],
-                    zs[start : end],
+                    zs[start: end],
                     partition, nratio
                 )
             )
-            start = end 
+            start = end
 
         tot_loss = torch.zeros(1)
         for f in futs:
@@ -234,7 +231,6 @@ class PredictorRecurrent(Euler_Recurrent):
 
         return [tot_loss.true_divide(sum(self.len_from_each))]
 
-    
     def score_edges(self, zs, partition, nratio=1):
         '''
         Gets edge scores from dist modules, and negative edges
@@ -253,21 +249,21 @@ class PredictorRecurrent(Euler_Recurrent):
         zs = torch.cat(
             [torch.zeros(zs[0].size()).unsqueeze(0), zs]
         )
-        
+
         futs = []
         start = 0
-    
+
         for i in range(self.num_workers):
             end = start + self.len_from_each[i]
             futs.append(
                 _remote_method_async(
                     PredictorEncoder.score_edges,
                     self.gcns[i],
-                    zs[start : end], 
+                    zs[start: end],
                     partition, nratio
                 )
             )
-            start = end 
+            start = end
 
         pos, neg = zip(*[f.wait() for f in futs])
         return torch.cat(pos, dim=0), torch.cat(neg, dim=0)
